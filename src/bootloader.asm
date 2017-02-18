@@ -1,44 +1,55 @@
-;defining offsets to data (DAP), which will be written over executed code(to save space)
-%define bs 0x7c00 ;since I'm saving every byte I can instead of setting DS to 0x07C0,
-                  ;I add this to addresses
-                 
-;Start of DAP defines
-%define nul 0x01 ;byte 
-%define sectors 0x02 ;word 
-%define offset 0x04 ;word 
-%define segment 0x06 ;word
-%define address 0x08 ;qword
-%define dev 0x10 ;byte 
-%define fat 0x11 ;dword 
-%define data 0x15 ;qword
-;End of DAP defines
-%define clustersize 0x7E0D ;address of loaded fat32 boot sector+offset to sectors per cluster
-%define ressecs 0x7E0E ;the same but offset points to number of reserved sectors before FAT
-%define numfats 0x7E10 ;the same but offset points to number of FATs
-%define fatsize 0x7E24 ;... size of one FAT
-%define curcluster 0x7E2C ;At the begining it's root cluster number, then I save there current cluster number
+;Welcome!
+;Before you look at code below I only want to explain something:
+;Most of the code could be written more efficiently, but
+;as the name indicates(bootsector) I only had 446 bytes
+;to write all of this, so thing that mattered the most was space
+;Let's now jmp into the code:
 
+;As I said space matters so I overwrited executed code with DAP data
+;DAP is a piece of info about sectors on disk you want to read or write,
+;which you later 'show to the BIOS' by an interrupt
+%define size 0x00       ;byte: size of a DAP(always value=0x10)
+%define nul 0x01        ;byte: NULL-which means value=0x00
+%define sectors 0x02    ;word containing number of sectors to be written/read
+                        ;REMEMBER that multi byte fields must be in Little-endian
+%define offset 0x04     ;word containing offset address to buffer in memory
+%define segment 0x06    ;word containing segment address of buffer in memory
+                        ;REMEMBER segment address is multiplied by 0x10, so:
+                        ;offset 0x7C00 is equal to segment 0x07C0
+%define address 0x08    ;Quad word containing LBA address to sector you want
+%define dev 0x10        ;byte containing number of device we're booting from
+%define fat 0x11        ;double word containing LBA address to start of FAT table
+%define data 0x15       ;Quad word containing LBA address to start of Data clusters
 
-BITS 16 ;inform assembler It's 16 bit mode
+;Theese are addresses to info which will be loaded and are hardwired to this code,
+;and hardwired to positions of segments and DAP offsets
+%define clustersize 0x020D  ;address of 'sectors per cluster' info
+%define ressecs 0x020E      ;address of 'reserverd sectors' info
+%define numfats 0x0210      ;address of 'number of FATS' info
+%define fatsize 0x0224      ;address of 'FAT size' info
+%define curcluster 0x022C   ;address of 'current cluster' info
+                        
+BITS 16 
                  
                 
          
                                                                  
                                                                                                  
-;Set segment registers to 0x0000                                                                            
+;Loading segments, and stack pointer                                                         
 xor ax, ax
 mov ss, ax
+mov ax, 0x07C0
 mov ds, ax
 not ax
 mov sp, ax
-;Check if BIOS supports extended LBA operations
+;Making sure BIOS can handle extended interrupts
 mov ah, 0x41
 mov bx, 0x55AA
 int 13h
-mov al, 0x30 ;save error code before jump
-jc err     ;jump if bios doesn't support extended int 0x13 (ERROR)       
-;Search for bootable FAT32 partition
-mov bx, bs+first_part
+mov al, 0x30    ;if not save error code
+jc err          ;and jump to print it
+;find first FAT32, bootable partition
+mov bx, first_part;address of first MBR Partition
 findpart:
 cmp byte [bx], 0x80
 jne chk_next
@@ -46,82 +57,96 @@ cmp byte [bx+4], 0x0B
 je foundpart
 chk_next:
 cmp bl, 0xFE
-mov al, 0x31
-je err                       ;jump if bootable partition not found
+mov al, 0x31    ;another error code
+je err          ;and jump to print (if there's no FAT32 bootable partition)             
 add bl, 0x10
 jmp findpart
-;Load first sector from found partition
+;loading first sector of a partition to get data about filesystem
 foundpart:
-mov dword [bs], 0x00010010
-mov dword [bs+offset], 0x07e00000
-mov eax, dword [bx+8]
-mov dword [bs+address], eax
-mov dword [bs+address+4], 0x00000000
-mov byte [bs+dev], dl
-call load
-;Save some data:
-    ;fat start address
+mov dword [size], 0x00010010    ;this sets DAP parameters(size = 0x10, null = 0x00, sectors = 0x0001)
+mov dword [offset], 0x07e00000  ;this sets segment/offset of buffer right after this bootsector
+mov eax, dword [bx+8]           ;copying first sector of partition 
+mov dword [address], eax        ;to LBA addres of DAP
+mov dword [address+4], 0x00000000;rest of the address is cleaned to 0's
+mov byte [dev], dl              ;saving this boot device number
+call load       ;calling function which actually loads sector
+
+;Saving data:
+    ;saving FAT address
 xor ebx, ebx
 mov bx, word [ressecs]
-add ebx, dword [bs+address]
-mov dword[bs+fat], ebx
-    ;data start address
+add ebx, dword [address]
+mov dword[fat], ebx
+    ;saving data address
 xor eax, eax
 mov al, byte [numfats]
 mul dword[fatsize]
 add eax, ebx
 sub eax, dword [curcluster]
-mov dword[bs+data], eax
-mov dword[bs+data+4], edx
-;search for kernel filename in root directory
-lndir:  ;load root dir cluster
-mov word[bs+segment], 0x0820
-call lnc
+mov dword[data], eax
+mov dword[data+4], edx
+;now a loop which:
+    ;loads a directory cluster:
+lndir:  
+mov word[segment], 0x0820
+call lnc    ;load cluster by it's number, and prepare new number to follow the chain
 lncall:
-mov si, bs+kern_filename
+    ;sets register values
+mov si, kern_filename
 mov bx, 0x0200
 xor ax, ax
 mov al, byte [clustersize]
 mul bx
 xor bx, bx
-searchdir:;compare names
+searchdir:
+    ;and compares filename with root directory entries
 call cmp_filename
 searchcall:
 add bx, 0x20
 cmp bx, ax
 je lndir
-jmp searchdir
+jmp searchdir   ;there is no escape, 
+                ;because getting out of loop is achieved inside loading sectors,
+                ;or if names match-out of comparing function
+                    
 
-;after finding file, or end of directory
+;CONTINUE:
 end:
-pop cx
-cmp cl, searchcall  ;check if file is file was found
-jne theend   ;if jump to next step of checking
-;set everything for loading of file
-mov word [bs+segment], 0x1000
-mov cx, word [bx+0x8214]
+pop cx ;both functions escape to the same place, SO:
+cmp cl, searchcall  ;we have to check what happened- did filename match or it wasn't found at all?
+jne theend   ;if file wasn't fount it has to be checked once again
+             ;(function loading new cluster is used to both load a file and load root directory, so it has to be checked)
+;It's time to load our Binary kernel:
+mov word [segment], 0x1000
+mov cx, word [bx+0x0614]
 shl ecx, 0x10
-mov cx, word [bx+0x821A] 
+mov cx, word [bx+0x061A] 
 mov dword [curcluster], ecx
-endrepeat:;load file
+;And here load cluster of this file
+endrepeat:
 call lnc
 endcall:
-add word [bs+segment], 0x0020
-jmp endrepeat
+add word [segment], 0x0020
+jmp endrepeat; once again the escape is being done by loading function when file is loaded
 
-theend: ;ultimate question
-cmp cl, endcall ;check if the file ended or file not found
-mov al, 0x32
-jne err;jump if not found (ERROR)
-jmp 0x1000:0x0000;jump to loaded file. THE END
+;So this is the second check
+theend: 
+cmp cl, endcall ;it checks which file ended(root directory because file wasn't found), -ERROR
+                ;or file which was loaded -NOT ERROR
+                
+mov al, 0x32    ;if error, save error code
+jne err         ;and print it
+jmp 0x1000:0x0000;THIS is the end. It just jumps to loaded kernel
 
-;function comparing filename in memory with ones on the disk
+;FUNCTIONS:
+
+;Function comparing filename saved in bootsector with filenames in root directory
 cmp_filename:
     pusha 
     mov cl, 0x0B
 .repeat:    
     lodsb
-    cmp al, [bx+0x8200]
+    cmp al, [bx+0x0600]
     jne .ne
     dec cl
     cmp cl, 0x00
@@ -138,64 +163,67 @@ cmp_filename:
     
 
 
-;function loading pending cluster and finding next in a chain
+;Function loading cluster by it's number and saving next cluster number 
 lnc:
-    cmp dword [curcluster], 0x0FFFFFF8
-    ja end 
+    cmp dword [curcluster], 0x0FFFFFF8  ;Here is THE escape; If it was the last cluster to load: 
+    ja end                              ;just exit to the end
+    
     xor eax, eax 
     mov al, byte [clustersize]
-    mov word [bs+sectors], ax
+    mov word [sectors], ax; save number of sectors to load whole cluster at once
     mul dword [curcluster]
-    add eax, dword [bs+data]
-    add edx, dword [bs+data+4]
-    mov dword [bs+address], eax
-    mov dword [bs+address+4], edx
+    add eax, dword [data]
+    add edx, dword [data+4]
+    ;LBA address of the cluster=clusterSize*currentCluster+dataLBA_Address
+    mov dword [address], eax
+    mov dword [address+4], edx
     call load
     
+    ;load FAT sector of next address
     xor eax, eax
-    mov dword [bs+address+4], eax
-    mov word [bs+sectors], ax
-    add word [bs+sectors], 0x0001
+    mov dword [address+4], eax
+    mov word [sectors], ax
+    add word [sectors], 0x0001
     xor ebx, ebx
     mov al, 0x04
     mul dword [curcluster]
     mov bx, 0x0200
     div dword ebx
-    add eax, dword [bs+fat]
-    mov dword [bs+address], eax
-    mov word [bs+segment], 0x0800
+    add eax, dword [fat]
+    mov dword [address], eax
+    mov word [segment], 0x0800
     push dx
     call load
+    ;and copy this address
     pop bx
-    and dword [bx+0x8000], 0x0FFFFFFF
-    mov eax, dword [bx+0x8000]
+    and dword [bx+0x0400], 0x0FFFFFFF ;HAHA FAT32 is using only 28 bits to address clusters
+    mov eax, dword [bx+0x0400]
     mov dword [curcluster], eax
     ret
 
 
-;Function loading sectors to memory according to DAP
+;Load sectors according to DAP
 load:
-    mov cl, 0x05
+    mov cl, 0x05; If something goes wrong retry five times
 repload:
     dec cl
     cmp cl, 0x00
     mov al, 0x33
     je err
-    mov dl, byte[bs+dev]
+    mov dl, byte[dev]
     mov si, bs 
     mov ah, 0x42
     int 13h
     jc repload 
     ret 
     
+;function reporting an error to screen
 err:
     mov ah, 0x0e
     int 0x10
-    jmp $
+    jmp $;and it stops
     
-kern_filename: db 'WAVE32  OS '
+kern_filename: db 'FILE    TXT';8.3 filename of kernel or whatever all in capital letters
+                    ;8 characters of name and 3 of extention, rest of spaces
 
-times 446-($-$$) db 0
-first_part: db 0x80
-times 510-($-$$) db 0
-dw 0xAA55
+                    ;Make sure device is bootable(At the end of MBR there should be a magic Word: 0x55 0xAA)
