@@ -28,7 +28,9 @@
 %define numfats 0x0210      ;address of 'number of FATS' info
 %define fatsize 0x0224      ;address of 'FAT size' info
 %define curcluster 0x022C   ;address of 'current cluster' info
-                        
+
+%define first_part 0x01BE0
+                                
 BITS 16 
                  
                 
@@ -211,7 +213,7 @@ repload:
     mov al, 0x33
     je err
     mov dl, byte[dev]
-    mov si, bs 
+    mov si, 0x0000 
     mov ah, 0x42
     int 13h
     jc repload 
@@ -223,7 +225,7 @@ err:
     int 0x10
     jmp $;and it stops
     
-kern_filename: db 'FILE    TXT';8.3 filename of kernel or whatever all in capital letters
+kern_filename: db _FILENAME;8.3 filename of kernel or whatever all in capital letters
                     ;8 characters of name and 3 of extention, rest of spaces
 
                     ;Make sure device is bootable(At the end of MBR there should be a magic Word: 0x55 0xAA)
