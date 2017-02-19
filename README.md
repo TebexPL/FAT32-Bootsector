@@ -6,6 +6,8 @@ Build using attached script.
 
 How it works? Let me explain parts that I found difficult at first:
 
+## Theory
+
 ### FAT32 basics
 
 
@@ -33,4 +35,19 @@ This is the first sector we need to find everything else.
 
 Here's an example - theese yellow fields belong to one file. Here we assume that file starts at cluster 1, so you load this cluster into memory, and check what address is at field 1 in File Allocation Table. As you can see address in field 1 points to the 4th cluster. When you load 4th cluster you check FAT's 4th entry, and you see address to the next cluster, and so on. When you loaded last cluster the address in FAT points to a value bigger than 0x0FFFFFF8. This is of course simplified but it shows how it works.
 
+## Practice
 
+### What does this bootsector actually do?
+
+Here it is, step by step:
+
+1. Check if BIOS supports extended load from disc
+2. Looks for first FAT32, bootable partition
+3. Searches for specified file in root directory
+4. Loads it
+5. Jumps to it
+
+
+### Cool! how do I make my HDD/SSD/SD card/Pendrive/floppy bootable?
+
+Just use my script...
