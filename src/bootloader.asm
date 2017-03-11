@@ -144,6 +144,9 @@ cmp cl, endcall ;it checks which file ended(root directory because file wasn't f
                 
 mov al, 0x32    ;if error, save error code
 jne err         ;and print it
+mov ax, 0x1000
+mov ds, ax
+
 jmp 0x1000:0x0000;THIS is the end. It just jumps to loaded kernel
 
 ;FUNCTIONS:
