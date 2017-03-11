@@ -29,11 +29,11 @@
 %define fatsize 0x0224      ;address of 'FAT size' info
 %define curcluster 0x022C   ;address of 'current cluster' info
 
-%define first_part 0x01BE0
+%define first_part 0x01BE
                                 
 BITS 16 
                  
-                
+      
          
                                                                  
                                                                                                  
@@ -49,7 +49,7 @@ mov ah, 0x41
 mov bx, 0x55AA
 int 13h
 mov al, 0x30    ;if not save error code
-jc err          ;and jump to print it
+jc err          ;and jumpjmp to print it
 ;find first FAT32, bootable partition
 mov bx, first_part;address of first MBR Partition
 findpart:
@@ -71,27 +71,33 @@ mov eax, dword [bx+8]           ;copying first sector of partition
 mov dword [address], eax        ;to LBA addres of DAP
 mov dword [address+4], 0x00000000;rest of the address is cleaned to 0's
 mov byte [dev], dl              ;saving this boot device number
-call load       ;calling function which actually loads sector
 
+call load       ;calling function which actually loads sector
 ;Saving data:
     ;saving FAT address
 xor ebx, ebx
-mov bx, word [ressecs]
-add ebx, dword [address]
-mov dword[fat], ebx
+mov bx, word [ressecs]; ressecs[byte] = 0E offset in loaded data
+add ebx, dword [address]; address = address in sectors to loaded data on disk
+mov dword[fat], ebx ; LEGIT XXX
     ;saving data address
 xor eax, eax
-mov al, byte [numfats]
-mul dword[fatsize]
-add eax, ebx
-sub eax, dword [curcluster]
-mov dword[data], eax
-mov dword[data+4], edx
+mov al, byte [numfats] ; numfats[byte] = 10 offset
+mul dword[fatsize] ; fatsize[dword] = 24 offset
+mov dword[data+4], edx  
+add ebx, eax
+xor eax, eax
+mov al, byte[clustersize] ; clustersize[byte] = C offset
+mul dword [curcluster] ;curcluster[dwored] = 2C offset
+sub ebx, eax
+mov dword[data], ebx
+
+
 ;now a loop which:
     ;loads a directory cluster:
 lndir:  
 mov word[segment], 0x0820
 call lnc    ;load cluster by it's number, and prepare new number to follow the chain
+
 lncall:
     ;sets register values
 mov si, kern_filename
@@ -114,7 +120,7 @@ jmp searchdir   ;there is no escape,
 
 ;CONTINUE:
 end:
-pop cx ;both functions escape to the same place, SO:
+pop cx ;both functions escape to jmpthe same place, SO:
 cmp cl, searchcall  ;we have to check what happened- did filename match or it wasn't found at all?
 jne theend   ;if file wasn't fount it has to be checked once again
              ;(function loading new cluster is used to both load a file and load root directory, so it has to be checked)
@@ -163,6 +169,7 @@ cmp_filename:
     popa
     jmp end
     
+   
 
 
 ;Function loading cluster by it's number and saving next cluster number 
@@ -184,8 +191,8 @@ lnc:
     ;load FAT sector of next address
     xor eax, eax
     mov dword [address+4], eax
+    mov al, 0x01
     mov word [sectors], ax
-    add word [sectors], 0x0001
     xor ebx, ebx
     mov al, 0x04
     mul dword [curcluster]
@@ -198,7 +205,7 @@ lnc:
     call load
     ;and copy this address
     pop bx
-    and dword [bx+0x0400], 0x0FFFFFFF ;HAHA FAT32 is using only 28 bits to address clusters
+    and dword [bx+0x0400], 0x0FFFFFFF ;It's funny(or not)that FAT32 is using only 28 bits to address clusters
     mov eax, dword [bx+0x0400]
     mov dword [curcluster], eax
     ret
@@ -224,6 +231,7 @@ err:
     mov ah, 0x0e
     int 0x10
     jmp $;and it stops
+
     
 kern_filename: db _FILENAME;8.3 filename of kernel or whatever all in capital letters
                     ;8 characters of name and 3 of extention, rest of spaces

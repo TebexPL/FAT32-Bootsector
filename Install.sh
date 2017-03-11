@@ -31,6 +31,9 @@ while (( "${#_FILENAME}" < "11" )) ; do
 	_FILENAME="$_FILENAME "
 done
 
+_FILENAME=$(echo "$_FILENAME" | awk '{printf toupper($0)}')
+
+
 nasm -d _FILENAME=\'"$_FILENAME"\' -o bin/bootloader.bin -f bin src/bootloader.asm
 
 clear
@@ -98,7 +101,7 @@ else
 	exit
 fi
 
-	tmp=$(wc -c ./bin/bootsector.bin | awk '{printf $1}')
+	tmp=$(wc -c ./bin/bootloader.bin | awk '{printf $1}')
 	if (("$tmp" > "446")) ; then
 		clear
 		echo "Critical Error - bootsector code exceeds 446 bytes";
@@ -107,8 +110,8 @@ fi
 	if [ -z "$(echo ${part[$bootpart]} | grep "boot" )" ] ; then
 		sudo parted /dev/disk/by-id/$bootdev toggle $bootpart boot > /dev/null
 	fi
-	sudo dd if=./bin/bootsector.bin of=/dev/disk/by-id/$bootdev
-	clear
+	sudo dd if=./bin/bootloader.bin of=/dev/disk/by-id/$bootdev
+	#clear
 	echo "DONE"
 	echo "Now copy "$filename" to root directory of selected partition, and you can boot from this device"
 
