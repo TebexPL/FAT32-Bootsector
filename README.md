@@ -6,7 +6,7 @@ Build using attached script.
 
 How it works? Let me explain parts that I found difficult at first:
 
-## Theory
+## Theory (if you know how FAT works skip to practice)
 
 ### FAT32 basics
 
@@ -47,7 +47,27 @@ Here it is, step by step:
 4. Loads it
 5. Jumps to it
 
+### OK so it loads... But what about my code? 
+
+#### Memory layout when jumping to your code:
+![alt text](https://github.com/TebexPL/FAT32-Bootsector/blob/master/doc/Memory_layout.png "Memory layout")
+
+#### Registers
+Most of registers **are not "zeroed" and garbage is assigned to them**
+
+**Only those have valid values:**
+
++ CS - as on image(assigned to loaded file)
++ DS - as on above
++ SS - as on image(0x0000)
++ SP - as on image(0xFFFF)
++ DL - drive number(for bios interrupts)
+
+## Limitations
++ It's all in real mode so maximum size of file must be less than **960 KB**
++ File must be in root directory of selected partition
++ Filename - max 8 characters for name and 3 for extention
 
 ### Cool! how do I make my HDD/SSD/SD card/Pendrive/floppy bootable?
 
-Just use my script...
+Just use my script... **(Only for linux, Tested on Ubuntu)**
