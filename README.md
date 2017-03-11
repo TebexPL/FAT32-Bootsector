@@ -68,6 +68,18 @@ Most of registers **are not "zeroed" and garbage is assigned to them**
 + File must be in root directory of selected partition
 + Filename - max 8 characters for name and 3 for extention
 
-### Cool! how do I make my HDD/SSD/SD card/Pendrive/floppy bootable?
+## Cool! how do I make my HDD/SSD/SD card/Pendrive/floppy bootable?
 
 Just use my script... **(Only for linux, Tested on Ubuntu)**
+
+## Errors?
+
+When error occurs bootsector draws error code on the screen.
+
+### Here are codes and explanations of errors:
+
+0 - extended BIOS functions not availble
+1 - Bootable partition not found or it's type is not FAT32
+2 - File not found
+3 - Can't load sectors (BIOS interrupt error)
+
