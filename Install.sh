@@ -111,7 +111,7 @@ fi
 		sudo parted /dev/disk/by-id/$bootdev toggle $bootpart boot > /dev/null
 	fi
 	sudo dd if=./bin/bootloader.bin of=/dev/disk/by-id/$bootdev
-	#clear
+	clear
 	echo "DONE"
 	echo "Now copy "$filename" to root directory of selected partition, and you can boot from this device"
 
