@@ -79,7 +79,10 @@ When error occurs bootsector draws error code on the screen.
 ### Here are codes and explanations of errors:
 
 0 - extended BIOS functions not availble
+
 1 - Bootable partition not found or it's type is not FAT32
+
 2 - File not found
+
 3 - Can't load sectors (BIOS interrupt error)
 
