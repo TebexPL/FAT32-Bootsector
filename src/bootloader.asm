@@ -120,9 +120,9 @@ jmp searchdir   ;there is no escape,
 
 ;CONTINUE:
 end:
-pop cx ;both functions escape to jmpthe same place, SO:
+pop cx ;both functions escape to the same place, SO:
 cmp cl, searchcall  ;we have to check what happened- did filename match or it wasn't found at all?
-jne theend   ;if file wasn't fount it has to be checked once again
+jne theend   ;if file wasn't found it has to be checked once again
              ;(function loading new cluster is used to both load a file and load root directory, so it has to be checked)
 ;It's time to load our Binary kernel:
 mov word [segment], 0x1000
@@ -144,9 +144,12 @@ cmp cl, endcall ;it checks which file ended(root directory because file wasn't f
                 
 mov al, 0x32    ;if error, save error code
 jne err         ;and print it
-mov ax, 0x1000
-mov ds, ax
-
+mov ax, 0x1000  
+mov ds, ax      ;setting DS to 0x1000(where file is loaded)
+xor eax, eax    
+not ax
+mov sp, ax      ;setting SP to 0xFFFF
+mov dl, byte[dev];setting DL with current drive value
 jmp 0x1000:0x0000;THIS is the end. It just jumps to loaded kernel
 
 ;FUNCTIONS:
