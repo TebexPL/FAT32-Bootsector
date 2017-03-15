@@ -70,7 +70,13 @@ Most of registers **are not "zeroed" and garbage is assigned to them**
 
 ## Cool! how do I make my HDD/SSD/SD card/Pendrive/floppy bootable?
 
-Just use my script... **(Only for linux, Tested on Ubuntu)**
+To install use:
+
++ On ubuntu use Install.sh script
++ On Windows use Fat32-bootsector.exe
+
+**Notice** Windows version does not use letters for partitions, but phisycal partitions(not logical), so:
+It may be more difficult to match partition-letter, but on the other hand it supports **multi partition usb drives**
 
 ## Errors?
 
