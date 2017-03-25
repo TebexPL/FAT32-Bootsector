@@ -18,8 +18,9 @@
                         ;offset 0x7C00 is equal to segment 0x07C0
 %define address 0x08    ;Quad word containing LBA address to sector you want
 %define dev 0x10        ;byte containing number of device we're booting from
-%define fat 0x11        ;double word containing LBA address to start of FAT table
-%define data 0x15       ;Quad word containing LBA address to start of Data clusters
+%define curcluster 0x11  ;dword containing current cluster number
+%define fat 0x15        ;double word containing LBA address to start of FAT table
+%define data 0x19       ;Quad word containing LBA address to start of Data clusters
 
 ;Theese are addresses to info which will be loaded and are hardwired to this code,
 ;and hardwired to positions of segments and DAP offsets
@@ -27,7 +28,7 @@
 %define ressecs 0x020E      ;address of 'reserverd sectors' info
 %define numfats 0x0210      ;address of 'number of FATS' info
 %define fatsize 0x0224      ;address of 'FAT size' info
-%define curcluster 0x022C   ;address of 'current cluster' info
+%define rootcluster 0x022C   ;address of 'root cluster' info
 
 %define first_part 0x01BE
                                 
@@ -40,13 +41,15 @@ BITS 16
 ;Loading segments, and stack pointer                                                         
 xor ax, ax
 mov ss, ax
-mov ax, 0x07C0
-mov ds, ax
 not ax
 mov sp, ax
+mov ax, 0x07C0
+mov ds, ax
+
 ;Making sure BIOS can handle extended interrupts
 mov ah, 0x41
 mov bx, 0x55AA
+;Theese are addresses to info which will be loaded 
 int 13h
 mov al, 0x30    ;if not save error code
 jc err          ;and jumpjmp to print it
@@ -59,6 +62,7 @@ cmp byte [bx+4], 0x0B
 je foundpart
 chk_next:
 cmp bl, 0xFE
+mov dl, byte[dev];setting DL with current drive value
 mov al, 0x31    ;another error code
 je err          ;and jump to print (if there's no FAT32 bootable partition)             
 add bl, 0x10
@@ -67,7 +71,7 @@ jmp findpart
 foundpart:
 mov dword [size], 0x00010010    ;this sets DAP parameters(size = 0x10, null = 0x00, sectors = 0x0001)
 mov dword [offset], 0x07e00000  ;this sets segment/offset of buffer right after this bootsector
-mov eax, dword [bx+8]           ;copying first sector of partition 
+mov eax, dword [bx+8]     ;copying first sector of partition 
 mov dword [address], eax        ;to LBA addres of DAP
 mov dword [address+4], 0x00000000;rest of the address is cleaned to 0's
 mov byte [dev], dl              ;saving this boot device number
@@ -87,18 +91,20 @@ mov dword[data+4], edx
 add ebx, eax
 xor eax, eax
 mov al, byte[clustersize] ; clustersize[byte] = C offset
-mul dword [curcluster] ;curcluster[dwored] = 2C offset
+
+mul dword [rootcluster] ;curcluster[dwored] = 2C offset
 sub ebx, eax
 mov dword[data], ebx
-
+mov eax,dword [rootcluster]
+mov dword [curcluster],eax
 
 ;now a loop which:
     ;loads a directory cluster:
 lndir:  
 mov word[segment], 0x0820
-call lnc    ;load cluster by it's number, and prepare new number to follow the chain
 
-lncall:
+call lnc    ;load cluster by it's number, and prepare new number to follow the chain
+lncall: 
     ;sets register values
 mov si, kern_filename
 mov bx, 0x0200
@@ -149,7 +155,6 @@ mov ds, ax      ;setting DS to 0x1000(where file is loaded)
 xor eax, eax    
 not ax
 mov sp, ax      ;setting SP to 0xFFFF
-mov dl, byte[dev];setting DL with current drive value
 jmp 0x1000:0x0000;THIS is the end. It just jumps to loaded kernel
 
 ;FUNCTIONS:
