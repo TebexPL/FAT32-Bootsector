@@ -47,12 +47,12 @@ Here it is, step by step:
 4. Loads it
 5. Jumps to it
 
-### OK so it loads... But what about my code? 
+## OK so it loads... But what about my code? 
 
-#### Memory layout when jumping to your code:
+### Memory layout when jumping to your code:
 ![alt text](https://github.com/TebexPL/FAT32-Bootsector/blob/master/doc/Memory_layout.png "Memory layout")
 
-#### Registers
+### Registers
 Most of registers **are not "zeroed" and garbage is assigned to them**
 
 **Only those have valid values:**
@@ -62,6 +62,16 @@ Most of registers **are not "zeroed" and garbage is assigned to them**
 + SS - as on image(0x0000)
 + SP - as on image(0xFFFF)
 + DL - drive number(for bios interrupts)
+
+### Useful data left in memory
+  
+#### after jumping to loaded file there is still some useful data left in memory:
+(all offsets are specified in source code)
+
++ 0x7C00 - DAP, current disk(device number), FAT address, first data sector address
++ 0x7e00 - BPB sector of that partition
+
+
 
 ## Limitations
 + It's all in real mode so maximum size of file must be less than **960 KB**
