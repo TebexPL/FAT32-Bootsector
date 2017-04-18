@@ -66,10 +66,10 @@ Most of registers **are not "zeroed" and garbage is assigned to them**
 ### Useful data left in memory
   
 #### after jumping to loaded file there is still some useful data left in memory:
-(all offsets are specified in source code)
+**(all offsets are specified in source code)**
 
-+ 0x7C00 - DAP, current disk(device number), FAT address, first data sector address
-+ 0x7e00 - BPB sector of that partition
++ 0x7E00 - DAP, current disk(device number), FAT address, first data sector address
++ 0x8000 - BPB sector of that partition
 
 
 
