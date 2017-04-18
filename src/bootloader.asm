@@ -1,277 +1,239 @@
-;Welcome, this is my FAT32 bootsector
-;Comments that have no code to the left are the most important(they say what is going on)
-;Comments that have code on their left explain how that code works(if you know assembly it's optional)
+;This defines offset to first/
+;MBR entry
+%define MBR 0x7DBE  
 
-;Let's jump right int othe code:
+;This defines address to a buffer/
+;for loading root directory entries
+%define rootbuffer 0x0840
 
-;I couldn't afford leaving space for DAP, so:
-;I overwrite code that was already executed with DAP
-;(DAP is just some info about data you want to load/store, which you 'show' to BIOS through interrupt)
-%define size 0x00       ;byte: size of DAP(value 0x10)
-%define nul 0x01        ;byte: null byte(value 0x00)
-%define sectors 0x02    ;word: number of sectors to load/store(value: numbers of sectors)
-                        ;REMEMBER that multi byte(words, dwords, qwords) fields must be in Little-endian
+    ;Theese define memory locations/
+;where useful data will be saved 
 
-%define offset 0x04     ;word: offset in memory to where data will be loaded/stored into/from
-%define segment 0x06    ;word: segment in memory which with offset creates address to buffer
-                        ;REMEMBER segment address is multiplied by 0x10, so:
-                        ;offset 0x7C00 is equal to segment 0x07C0
-                        
-%define address 0x08    ;Qword: 8 bytes containing address of sector on drive to load/store data
-                        
-                        ;END OF DAP
+;DAP
+%define DAP 0x7E00  ;DAP for Extended BIOS Interrupts
+    %define Dsize 0x00 
+    %define Dnull 0x01
+    %define Dsectors 0x02 
+    %define Doffset 0x04
+    %define Dsegment 0x06
+    %define Daddress 0x08
+    ;End of DAP
+   
+;More useful data
+%define BPB 0x7E10    ;(DWORD) LBA of first /
+                      ;sector of loaded partition
+%define FAT 0x7E14    ;(DWORD) LBA of first FAT sector
+%define DATA 0x7E18   ;(QWORD) LBA of first DATA sector
+%define BLOCK 0x7E20  ;(DWORD) LBA of cluster to be loaded
+%define Secsize 0x7E24;(DWORD) Size of one sector(in bytes)
+%define DEV 0x7E28    ;(BYTE)  Current device(for bios interrupts)  
 
-;right after DAP I overwrite code with some useful info,
-;such as:
-;addresses of first FAT and data sectors
-;device from which I am loading
-;etc
+;Memory addresses to FAT info which is loaded later
+%define INFO 0x8000
+    %define ResSecs 0x0E    
+    %define Fats 0x10
+    %define Fatsize 0x24
+    %define Rootcluster 0x2C
+    %define Secperblock 0x0D
+    %define Bytespersec 0x0B
 
-%define dev 0x10        ;byte: device containing this bootsector
-%define curcluster 0x11 ;Dword: current cluster
-%define fat 0x15        ;Dword: first FAT sector address
-%define data 0x19       ;Qword: first data sector address
-
-;This are defined offsets to info which is loaded from first sector of partition
-%define clustersize 0x020D ;byte:  number of sectors per cluster
-%define ressecs 0x020E     ;word:  number of reserved sectors right after the BPB(first sector of partition)
-%define numfats 0x0210     ;byte:  number of FATs
-%define fatsize 0x0224     ;Dword: size of one FAT in sectors
-%define rootcluster 0x022C ;Dword: root directory cluster number 
-
-;offsets to info about file in root directory
-%define lwordcluster 0x061A;word: high word of first cluster of the file
-%define hwordcluster 0x0614;word; low word...
-
-;and offset in bootsector to first MBR partition
-%define first_part 0x01BE
-                                       
-;Real mode of course                                                                               
-BITS 16 
-                 
-      
-         
-                                                                 
-                                                                                                 
-;Setting segments                                        
+;Setting registers
 xor ax, ax
-mov ss, ax  ;SS=0x0000
+mov ds, ax
+mov ss, ax
 not ax
-mov sp, ax  ;SP=0xFFFF
-mov ax, 0x07C0
-mov ds, ax  ;DS=0x7c00(where bootsector is loaded)
+mov sp, ax
+;Checking if BIOS supports extended interrupts
+mov ah,0x41
+int 0x13
+mov al, 0x30 ;if not-save error code/
+jc err;       and jump to error routine
 
-;Checking if BIOS supports extended interrupts 
-mov ah, 0x41
-mov bx, 0x55AA
-int 13h
-;if not:
-mov al, 0x30;load al with error code    
-jc err;and jump to error routine
-
-;a loop searching for bootable, FAT32 partition
-mov bx, first_part
-findpart:
-cmp byte [bx], 0x80;checking tif it's bootable
-jne chk_next
-cmp byte [bx+4], 0x0B;checking it's type(not very professional but effective)
-je foundpart   ;if both(bootable, type) match, then jump to the next part
-chk_next: ;if not, check next partition entry
-cmp bl, 0xFE    ;if checked all of them and none is matching:
-mov dl, byte[dev]
-mov al, 0x31   ;save error code
-je err         ;and jump to error routine
-add bl, 0x10
-jmp findpart
-
-;When partition is found set the DAP with address of that partition
-foundpart:
-mov dword [size], 0x00010010    
-mov dword [offset], 0x07e00000  
-mov eax, dword [bx+8]     
-mov dword [address], eax        
-mov dword [address+4], 0x00000000
-mov byte [dev], dl              
-;and load it's first sector
-call load       
-
-;Save/calculate values for later use
-
-    ;first FAT sector
-xor ebx, ebx
-mov bx, word [ressecs]
-add ebx, dword [address]
-mov dword[fat], ebx 
-    ;first data cluster
-xor eax, eax
-mov al, byte [numfats]
-mul dword[fatsize] 
-mov dword[data+4], edx  
-add ebx, eax
-xor eax, eax
-mov al, byte[clustersize] 
-mul dword [rootcluster] 
-sub ebx, eax
-mov dword[data], ebx
-    ;and copy root cluster number(so it will be loaded next)
-mov eax,dword [rootcluster]
-mov dword [curcluster],eax
-
-;This chunk of code loads root directory cluster, searches for the file, if not found loads next, searches, and so on
-;needed FAT sector is loadaed to 0x8000, and directory cluster to 0x8200
-lndir:  
-mov word[segment], 0x0820;
-
-call lnc   ;this routine loads cluster(curcluster), and saves number of next cluster to load
-lncall:;this is just to check later from which place routine was called 
-    
-;loop compairinn filenames
-mov si, kern_filename
-mov bx, 0x0200
-xor ax, ax
-mov al, byte [clustersize]
-mul bx
+;search for first Bootable, FAT32 partition
 xor bx, bx
-searchdir:
-    
-call cmp_filename ;routine comparing filenames character by character
-searchcall:
-add bx, 0x20
-cmp bx, ax
-je lndir
-jmp searchdir   
-;NOTICE that escape from this loop is made in routine 'lnc'
-;when lnc loaded last cluster(file not found), or filenames match(file found)they both jump to 'end:'
-                    
+checkparts:
+cmp byte [MBR+bx], 0x80
+jne partrepeat
+cmp byte [MBR+bx+0x04], 0x0B
+je foundpart
+partrepeat:
+cmp bx, 0x30
+mov al, 0x31;if not-save error code/
+je err;       and jump to error routine
+add bx, 0x10
+jmp checkparts;
 
+;When found partition/
+;load it's first sector to get more info
+foundpart:
+mov dword [DAP], 0x00010010
+mov dword [DAP+0x04], 0x08000000
+mov dword ecx, [MBR+bx+0x08]
+mov dword [DAP+0x08], ecx
+mov dword [DAP+0x0C], 0x00000000
+mov byte [DEV], dl
+call dapLoad
 
-;this is the place where routines jump
-end:
-pop cx 
-cmp cl, searchcall  ;check if filenames match or file ended
-jne theend  ;jump to another check if file ended
-            
-;if filenames were matching, set DAP, and curcluster for loading the file
-mov word [segment], 0x1000
-mov cx, word [bx+hwordcluster]
-shl ecx, 0x10
-mov cx, word [bx+lwordcluster] 
-mov dword [curcluster], ecx
-;a loop which just loads the file
-endrepeat:
+;Then calculate and save that info:
+
+;LBA of first FAT sector
+mov dword [BPB], ecx
+add cx, word [INFO+ResSecs]
+mov dword [FAT], ecx
+
+;LBA of first DATA sector
+xor eax, eax
+mov al, byte [INFO+Secperblock]
+mul dword [INFO+Rootcluster]
+sub ecx, eax
+xor eax, eax
+mov al, byte [INFO+Fats]
+mul dword [INFO+Fatsize]
+add eax, ecx
+mov dword[DATA], eax
+mov [DATA+4], edx
+
+;cluster number of Root directory 
+mov eax, dword [INFO+Rootcluster]
+mov dword [BLOCK], eax ;save as pending cluster/
+                       ;to be loaded
+
+;Number of bytes per sector
+mov ax, word [INFO+Bytespersec]
+mov word[Secsize], ax
+
+;set segment register for a buffer
+mov ax, rootbuffer
+mov es, ax
+
+;search root directory for specified filename
+searchdirs:
+mov word [DAP+Dsegment],rootbuffer
 call lnc
-endcall:
-add word [segment], 0x0020
-jmp endrepeat
-;NOTICE, once again it exits when lnc loads last cluster
+File_not_found: 
+sub ax, 0x0840
+shl ax, 0x04
+mov di, ax
+xor bx, bx
+xor dx, dx
+xor cl, cl
+mov si, 0x7c00+filename
+cmp_chars:
+cmp cl, 0x0B
+je match
+lodsb
+cmp al, byte[es:bx]
+jne next_filename
+inc bx
+inc cl
+jmp cmp_chars
+next_filename:
+xor cl, cl
+add dx, 0x20
+cmp dx, di
+je searchdirs
+mov bx, dx
+mov si, 0x7c00+filename
+jmp cmp_chars
+
+;if filename matches get this file's cluster number
+match:
+mov bx, dx
+mov ax, word[es:bx+0x14]
+shl eax, 0x10
+mov ax, word[es:bx+0x1A]
+mov dword [BLOCK], eax
+mov word [DAP+Dsegment], 0x1000
+;and load it
+loadfile:
+call lnc
+jmp loadfile
+
+;This is where function jumps when whole file is loaded
+eof:
+pop ax
+cmp al, File_not_found;this checks why file ended:
+                        ;1.root directory ended because/
+                        ;file wasn't found.
+                        ;OR
+                        ;2.file was found and successfully/
+                        ;loaded
+mov al, 0x32;if file wasn't found-save error code
+je err ;        and jump to error routine
+;Set registers
+mov ax, 0x1000
+mov ds, ax
+;And Jump to loaded Code
+jmp 0x1000:0x0000   ; THE END
 
 
-theend: 
-cmp cl, endcall ;this checks which file ended(root directory because file wasn't found,
-                ;                             or file was succesfully loaded)
-              
-;if file wasn't found:              
-mov al, 0x32   ;save error code 
-jne err        ;and jump to error routine
-;if all is good, set registers and jump to loaded file
-mov ax, 0x1000  
-mov ds, ax    
-xor eax, eax    
-not ax
-mov sp, ax      
-jmp 0x1000:0x0000
-;THE END
+;Routines:
 
 
-
-;FUNCTIONS:
-
-;comparing filenames, if match jump to 'end:'
-cmp_filename:
-    pusha 
-    mov cl, 0x0B
-.repeat:    
-    lodsb
-    cmp al, [bx+0x0600]
-    jne .ne
-    dec cl
-    cmp cl, 0x00
-    je .e
-    inc bx
-    jmp .repeat
-    
-.ne:
-    popa 
-    ret
-.e:
-    popa
-    jmp end
-    
-   
-
-
-;loading cluster, if last cluster loaded jump to 'end:'
+;lnc - Load Next Cluster
+;loads cluster into memory, and saves next cluster's number
 lnc:
-    cmp dword [curcluster], 0x0FFFFFF8   
-    ja end                             
-    
-    xor eax, eax 
-    mov al, byte [clustersize]
-    mov word [sectors], ax
-    mul dword [curcluster]
-    add eax, dword [data]
-    add edx, dword [data+4]
-    
-    mov dword [address], eax
-    mov dword [address+4], edx
-    call load
-    
-   
-    xor eax, eax
-    mov dword [address+4], eax
-    mov al, 0x01
-    mov word [sectors], ax
-    xor ebx, ebx
-    mov al, 0x04
-    mul dword [curcluster]
-    mov bx, 0x0200
-    div dword ebx
-    add eax, dword [fat]
-    mov dword [address], eax
-    mov word [segment], 0x0800
-    push dx
-    call load
-    
-    pop bx
-    and dword [bx+0x0400], 0x0FFFFFFF 
-    mov eax, dword [bx+0x0400]
-    mov dword [curcluster], eax
-    ret
+cmp dword [BLOCK], 0x0FFFFFF8
+jae eof;if file ended jump to specified code
+
+;this part saves next cluster's number
+push dword [BLOCK]
+push word [DAP+Dsegment]
+xor eax, eax
+mov al, 0x04
+mul dword[BLOCK]
+div dword [Secsize] 
+add eax, dword[FAT]
+mov dword[DAP+Daddress], eax
+mov word [DAP+Dsegment], 0x0820
+mov word [DAP+Dsectors], 0x0001
+push dx
+call dapLoad
+pop bx
+mov eax, dword [bx+0x8200]
+and eax, 0x0FFFFFFF
+mov dword [BLOCK], eax
+
+;This part loads current cluster into memory
+pop word [DAP+Dsegment]
+xor eax, eax
+mov al, byte[INFO+Secperblock]
+mov [DAP+Dsectors], al
+pop dword ebx
+mul ebx
+add eax, [DATA]
+add edx, [DATA+4]
+mov dword[DAP+Daddress], eax
+mov dword[DAP+Daddress+4], edx
+call dapLoad
+;Also sets buffer for next cluster right after loaded one
+xor eax, eax
+mov al, byte[INFO+Secperblock]
+mul word [INFO+Bytespersec]
+shr ax, 0x04
+add word [DAP+Dsegment], ax
+ret 
+
+;Simple routine loading sectors according to DAP
+dapLoad:
+xor dh, dh
+.repeat:
+cmp dh, 0x05
+mov al, 0x33
+je err ;XXX
+inc dh
+mov ah, 0x42
+mov si, DAP
+mov dl, byte [DEV]
+int 0x13
+jc .repeat
+ret
 
 
-;simple routine for loading sectors
-load:
-    mov cl, 0x05
-repload:
-    dec cl
-    cmp cl, 0x00
-    mov al, 0x33
-    je err
-    mov dl, byte[dev]
-    mov si, 0x0000 
-    mov ah, 0x42
-    int 13h
-    jc repload 
-    ret 
-    
-;error routine, prints error and stops
+;Simple Error routine(only prints one character)
 err:
-    mov ah, 0x0e
-    int 0x10
-    jmp $
+mov ah, 0x0E
+int 0x10
+jmp $
 
-    
-kern_filename: db _FILENAME;8.3 filename of kernel or whatever, all in capital letters
-                    ;8 characters of name and 3 of extention, rest of spaces
-
-                   
+filename: db _FILENAME; Filename in 8.3 format
