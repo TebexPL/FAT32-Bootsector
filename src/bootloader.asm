@@ -1,6 +1,6 @@
 ;This defines offset to first/
-;MBR entry
-%define MBR 0x7DBE  
+;MBR entry (-0x10)
+%define MBR 0x7DAE  
 
 ;This defines address to a buffer/
 ;for loading root directory entries
@@ -30,8 +30,10 @@
 
 ;Memory addresses to FAT info which is loaded later
 %define INFO 0x8000
+    
     %define ResSecs 0x0E    
     %define Fats 0x10
+    %define Totalsec16 0x13
     %define Fatsize 0x24
     %define Rootcluster 0x2C
     %define Secperblock 0x0D
@@ -49,23 +51,18 @@ int 0x13
 mov al, 0x30 ;if not-save error code/
 jc err;       and jump to error routine
 
-;search for first Bootable, FAT32 partition
+;search for first Bootable partition
 xor bx, bx
 checkparts:
-cmp byte [MBR+bx], 0x80
-jne partrepeat
-cmp byte [MBR+bx+0x04], 0x0B
-je foundpart
-partrepeat:
-cmp bx, 0x30
+add bx, 0x10
+cmp bx, 0x40
 mov al, 0x31;if not-save error code/
 je err;       and jump to error routine
-add bx, 0x10
-jmp checkparts;
+cmp byte [MBR+bx], 0x80
+jne checkparts;
 
 ;When found partition/
 ;load it's first sector to get more info
-foundpart:
 mov dword [DAP], 0x00010010
 mov dword [DAP+0x04], 0x08000000
 mov dword ecx, [MBR+bx+0x08]
