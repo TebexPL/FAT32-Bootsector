@@ -154,7 +154,8 @@ if [ "$REPLY" = "y" ] || [ "$REPLY" = "Y" ] ; then
 else
 	exit
 fi
-
+	sudo dd if=/dev/disk/by-id/$bootdev of=backup/backup_bootsector_MBR.bin count=1 status=none
+	sudo chmod 777 backup/backup_bootsector_MBR.bin
 	tmp=$(wc -c ./bin/bootloader.bin | awk '{printf $1}')
 	if (("$tmp" > "446")) ; then
 		clear

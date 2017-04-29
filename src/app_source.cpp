@@ -328,7 +328,11 @@ Select partition you want to boot from(where file will be copied):\n\
         getch();
         return 1;
     }
-
+//saving current bootsector for backup
+    fstream bckup;
+    bckup.open("backup/backup_bootsector.bin", ios::out|ios::trunc);
+    bckup.write(bootsector, 512);
+    bckup.close();
 //Clear boot field in every partition entry
     for(int i = 0; i < 4; i++)
         bootsector[0x01BE + i*0x10] = (unsigned char)0x00;
